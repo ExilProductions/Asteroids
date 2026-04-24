@@ -22,7 +22,7 @@ namespace Asteroids
         private void CreateTrayIcon()
         {
             _trayMenu = new Forms.ContextMenuStrip();
-            _trayMenu.Items.Add("Exit", null, (_, _) => Shutdown());
+            _trayMenu.Items.Add("Exit", null, (_, _) => RequestExit());
 
             _trayIcon = new Forms.NotifyIcon
             {
@@ -31,6 +31,17 @@ namespace Asteroids
                 ContextMenuStrip = _trayMenu,
                 Icon = ResolveTrayIcon()
             };
+        }
+
+        private void RequestExit()
+        {
+            if (MainWindow is MainWindow mainWindow)
+            {
+                mainWindow.BeginExitSequence();
+                return;
+            }
+
+            Shutdown();
         }
 
         private static Icon ResolveTrayIcon()

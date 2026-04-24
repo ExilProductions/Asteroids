@@ -28,6 +28,14 @@ public sealed class AsteroidsGameConfig
     public double HitShakeDuration { get; init; } = 0.22;
     public double HitShakeMagnitudeMultiplier { get; init; } = 0.09;
     public double HitShakeFrequency { get; init; } = 34.0;
+    public int MinDebrisPieces { get; init; } = 6;
+    public int MaxDebrisPieces { get; init; } = 14;
+    public double DebrisLifeSeconds { get; init; } = 1.4;
+    public double DebrisSpeedMin { get; init; } = 55.0;
+    public double DebrisSpeedMax { get; init; } = 210.0;
+    public double DebrisDragPerSecond { get; init; } = 1.8;
+    public double DebrisScaleMin { get; init; } = 0.12;
+    public double DebrisScaleMax { get; init; } = 0.32;
     public int MinWorldWidth { get; init; } = 300;
     public int MinWorldHeight { get; init; } = 200;
     public float PixelsPerMeter { get; init; } = 64f;

@@ -18,26 +18,5 @@
                 ClipToBounds="False"
                 MouseMove="GameCanvas_MouseMove"
                 MouseLeftButtonDown="GameCanvas_MouseLeftButtonDown" />
-
-        <Border HorizontalAlignment="Left"
-                VerticalAlignment="Top"
-                Margin="16"
-                Padding="10,6"
-                CornerRadius="6"
-                Background="#66000000"
-                IsHitTestVisible="False">
-            <StackPanel>
-                <TextBlock x:Name="AsteroidsText"
-                           Foreground="White"
-                           FontSize="16"
-                           FontWeight="SemiBold"
-                           Text="Asteroids: 0" />
-                <TextBlock x:Name="DestroyedText"
-                           Margin="0,2,0,0"
-                           Foreground="#FFD8D8D8"
-                           FontSize="14"
-                           Text="Destroyed: 0" />
-            </StackPanel>
-        </Border>
     </Grid>
 </Window>

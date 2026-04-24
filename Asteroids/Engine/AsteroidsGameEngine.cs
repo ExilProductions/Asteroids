@@ -25,6 +25,7 @@ public sealed class AsteroidsGameEngine : IDisposable
     private readonly Random _random = new();
     private readonly List<AsteroidEntity> _asteroids = new();
     private readonly List<ExplosionEntity> _explosions = new();
+    private readonly List<DebrisEntity> _debris = new();
     private readonly SoundEffectPlayer _explosionAudioPlayer;
     private readonly SoundEffectPlayer _asteroidBumpAudioPlayer;
     private readonly World _physicsWorld;
@@ -34,6 +35,7 @@ public sealed class AsteroidsGameEngine : IDisposable
     private readonly List<Rect> _monitorBounds = new();
     private WpfPoint _cursorPosition;
     private double _spawnAccumulator;
+    private bool _shutdownMode;
 
     public AsteroidsGameEngine(Canvas canvas, AsteroidsGameConfig config)
     {
@@ -69,16 +71,31 @@ public sealed class AsteroidsGameEngine : IDisposable
         RebuildMonitorWalls();
     }
 
+    public void BeginShutdownSequence()
+    {
+        _shutdownMode = true;
+    }
+
     public void Update(double deltaSeconds)
     {
-        SpawnAsteroids(deltaSeconds);
+        if (!_shutdownMode)
+        {
+            SpawnAsteroids(deltaSeconds);
+        }
+
         _physicsWorld.Step((float)deltaSeconds);
         UpdateAsteroidsFromPhysics(deltaSeconds);
         UpdateExplosions(deltaSeconds);
+        UpdateDebris(deltaSeconds);
     }
 
     public void OnClick(WpfPoint clickPosition)
     {
+        if (_shutdownMode)
+        {
+            return;
+        }
+
         for (int i = _asteroids.Count - 1; i >= 0; i--)
         {
             AsteroidEntity asteroid = _asteroids[i];
@@ -116,6 +133,18 @@ public sealed class AsteroidsGameEngine : IDisposable
         }
 
         return false;
+    }
+
+    public bool DestroyOneAsteroidForShutdown()
+    {
+        if (_asteroids.Count == 0)
+        {
+            return false;
+        }
+
+        int index = _random.Next(_asteroids.Count);
+        DestroyAsteroid(index, _asteroids[index].Position);
+        return true;
     }
 
     private void SpawnAsteroids(double deltaSeconds)
@@ -177,7 +206,7 @@ public sealed class AsteroidsGameEngine : IDisposable
             body,
             spawn,
             RandomRange(-95, 95),
-            _random.Next(_config.MinClicksToDestroy, _config.MaxClicksToDestroy + 1)));
+            CalculateHitPointsFromScale(scale)));
     }
 
     private WpfVector CreateSpawnVelocity(WpfPoint spawnPosition, Rect spawnBounds)
@@ -210,6 +239,15 @@ public sealed class AsteroidsGameEngine : IDisposable
         double angle = baseAngle + RandomRange(-spread * 0.5, spread * 0.5);
         double speed = RandomRange(_config.MinSpeed, _config.MaxSpeed);
         return new WpfVector(Math.Cos(angle) * speed, Math.Sin(angle) * speed);
+    }
+
+    private int CalculateHitPointsFromScale(double scale)
+    {
+        double scaleRange = Math.Max(0.001, _config.MaxAsteroidScale - _config.MinAsteroidScale);
+        double normalizedScale = Math.Clamp((scale - _config.MinAsteroidScale) / scaleRange, 0, 1);
+        double rawHitPoints = _config.MinClicksToDestroy + ((_config.MaxClicksToDestroy - _config.MinClicksToDestroy) * normalizedScale);
+        int variation = _random.Next(-1, 2);
+        return Math.Clamp((int)Math.Round(rawHitPoints) + variation, _config.MinClicksToDestroy, _config.MaxClicksToDestroy);
     }
 
     private void UpdateAsteroidsFromPhysics(double deltaSeconds)
@@ -265,6 +303,7 @@ public sealed class AsteroidsGameEngine : IDisposable
     {
         AsteroidEntity asteroid = _asteroids[asteroidIndex];
         ApplyExplosionImpulse(location, asteroid);
+        SpawnDebris(asteroid);
         _physicsWorld.RemoveBody(asteroid.Body);
         _canvas.Children.Remove(asteroid.Image);
         _asteroids.RemoveAt(asteroidIndex);
@@ -282,6 +321,43 @@ public sealed class AsteroidsGameEngine : IDisposable
         Canvas.SetTop(explosionImage, location.Y - explosionImage.Height / 2);
         _explosions.Add(new ExplosionEntity(explosionImage, 0));
         _explosionAudioPlayer.Play();
+    }
+
+    private void SpawnDebris(AsteroidEntity sourceAsteroid)
+    {
+        double sourceSize = Math.Max(sourceAsteroid.Image.Width, sourceAsteroid.Image.Height);
+        int pieceCount = _random.Next(_config.MinDebrisPieces, _config.MaxDebrisPieces + 1);
+        double lifeBase = _config.DebrisLifeSeconds * RandomRange(0.8, 1.2);
+        WpfPoint center = sourceAsteroid.Position;
+
+        for (int i = 0; i < pieceCount; i++)
+        {
+            double angle = _random.NextDouble() * Math.PI * 2;
+            double speed = RandomRange(_config.DebrisSpeedMin, _config.DebrisSpeedMax) * Math.Max(0.7, sourceSize / 100.0);
+            WpfVector velocity = new(Math.Cos(angle) * speed, Math.Sin(angle) * speed);
+            CroppedBitmap sprite = _asteroidFrames[_random.Next(_asteroidFrames.Length)];
+            double scale = RandomRange(_config.DebrisScaleMin, _config.DebrisScaleMax) * Math.Max(0.75, sourceSize / 90.0);
+
+            var image = new WpfImage
+            {
+                Source = sprite,
+                Width = Math.Max(4, sprite.PixelWidth * scale),
+                Height = Math.Max(4, sprite.PixelHeight * scale),
+                Opacity = RandomRange(0.75, 1.0),
+                IsHitTestVisible = false,
+                RenderTransformOrigin = new WpfPoint(0.5, 0.5)
+            };
+            _canvas.Children.Add(image);
+
+            var debris = new DebrisEntity(
+                image,
+                center,
+                velocity,
+                lifeBase * RandomRange(0.85, 1.15),
+                RandomRange(-420, 420),
+                _random.NextDouble() * 360);
+            _debris.Add(debris);
+        }
     }
 
     private void ApplyExplosionImpulse(WpfPoint center, AsteroidEntity sourceAsteroid)
@@ -408,6 +484,32 @@ public sealed class AsteroidsGameEngine : IDisposable
         return new WpfVector(x, y);
     }
 
+    private void UpdateDebris(double deltaSeconds)
+    {
+        for (int i = _debris.Count - 1; i >= 0; i--)
+        {
+            DebrisEntity debris = _debris[i];
+            debris.RemainingLife -= deltaSeconds;
+            if (debris.RemainingLife <= 0)
+            {
+                _canvas.Children.Remove(debris.Image);
+                _debris.RemoveAt(i);
+                continue;
+            }
+
+            double drag = Math.Exp(-_config.DebrisDragPerSecond * deltaSeconds);
+            debris.Velocity *= drag;
+            debris.Position += debris.Velocity * deltaSeconds;
+            debris.RotationAngle += debris.RotationSpeed * deltaSeconds;
+
+            double lifeRatio = debris.RemainingLife / Math.Max(0.001, debris.LifeTime);
+            debris.Image.Opacity = Math.Clamp(lifeRatio, 0, 1);
+            debris.Image.RenderTransform = new RotateTransform(debris.RotationAngle);
+            Canvas.SetLeft(debris.Image, debris.Position.X - debris.Image.Width / 2);
+            Canvas.SetTop(debris.Image, debris.Position.Y - debris.Image.Height / 2);
+        }
+    }
+
     private void RebuildMonitorWalls()
     {
         foreach (Body wallBody in _monitorWallBodies)
@@ -519,6 +621,12 @@ public sealed class AsteroidsGameEngine : IDisposable
 
     public void Dispose()
     {
+        for (int i = _debris.Count - 1; i >= 0; i--)
+        {
+            _canvas.Children.Remove(_debris[i].Image);
+        }
+
+        _debris.Clear();
         _explosionAudioPlayer.Dispose();
         _asteroidBumpAudioPlayer.Dispose();
     }

@@ -19,7 +19,10 @@ namespace Asteroids
         private const int HtClient = 1;
         private readonly DispatcherTimer _timer;
         private readonly AsteroidsGameEngine _engine;
+        private readonly DispatcherTimer _shutdownSequenceTimer;
         private DateTime _lastTickTime;
+        private bool _isShutdownSequenceRunning;
+        private bool _isForcedClose;
 
         public MainWindow()
         {
@@ -37,15 +40,59 @@ namespace Asteroids
             };
             _timer.Tick += UpdateGame;
             _timer.Start();
+            _shutdownSequenceTimer = new DispatcherTimer(DispatcherPriority.Normal)
+            {
+                Interval = TimeSpan.FromMilliseconds(70)
+            };
+            _shutdownSequenceTimer.Tick += ShutdownSequenceTick;
 
+            Closing += MainWindow_Closing;
             Closed += MainWindow_Closed;
+        }
+
+        public void BeginExitSequence()
+        {
+            if (_isForcedClose || _isShutdownSequenceRunning)
+            {
+                return;
+            }
+
+            _isShutdownSequenceRunning = true;
+            _engine.BeginShutdownSequence();
+            _shutdownSequenceTimer.Start();
+        }
+
+        private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+        {
+            if (_isForcedClose)
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            BeginExitSequence();
         }
 
         private void MainWindow_Closed(object? sender, EventArgs e)
         {
             _timer.Stop();
+            _shutdownSequenceTimer.Stop();
             SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
             _engine.Dispose();
+        }
+
+        private void ShutdownSequenceTick(object? sender, EventArgs e)
+        {
+            bool removed = _engine.DestroyOneAsteroidForShutdown();
+            if (removed)
+            {
+                return;
+            }
+
+            _shutdownSequenceTimer.Stop();
+            _isForcedClose = true;
+            Close();
+            System.Windows.Application.Current.Shutdown();
         }
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -130,7 +177,6 @@ namespace Asteroids
             double deltaSeconds = Math.Clamp((now - _lastTickTime).TotalSeconds, 0.001, 0.04);
             _lastTickTime = now;
             _engine.Update(deltaSeconds);
-            UpdateHud();
         }
 
         private void GameCanvas_MouseMove(object sender, WpfMouseEventArgs e)
@@ -143,10 +189,5 @@ namespace Asteroids
             _engine.OnClick(e.GetPosition(GameCanvas));
         }
 
-        private void UpdateHud()
-        {
-            AsteroidsText.Text = $"Asteroids: {_engine.ActiveAsteroids}";
-            DestroyedText.Text = $"Destroyed: {_engine.DestroyedAsteroids}";
-        }
     }
 }
